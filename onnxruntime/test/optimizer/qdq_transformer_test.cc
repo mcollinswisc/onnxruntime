@@ -1223,6 +1223,63 @@ TEST(QDQTransformerTests, TileDropQDQ) {
   RunTileDropQDQTestCase<uint16_t>({1, 3, 2, 2}, {1, 1, 3, 3}, false);      // Use int16 ONNX QDQ ops
 }
 
+// Runs a test case that checks if Q/DQ nodes are dropped from DQ -> SpaceToDepth -> Q -> DQ -> DepthToSpace -> Q.
+template <typename QuantType>
+static void RunSpaceToDepthToSpaceDropQDQTestCase(const std::vector<int64_t>& input_shape,
+                                                  bool use_contrib_qdq = false,
+                                                  int opset = 21) {
+  auto build_test_case = [input_shape, use_contrib_qdq](ModelTestBuilder& builder) {
+    constexpr QuantType qmin = std::numeric_limits<QuantType>::min();
+    constexpr QuantType qmax = std::numeric_limits<QuantType>::max();
+
+    auto* input_arg = builder.MakeInput<QuantType>(input_shape, qmin, qmax);
+    QuantType zero_point = 1 + (qmax + qmin) / 2;
+    constexpr float scale = .003f;
+
+    // add DQ
+    auto* input_arg_dq = builder.MakeIntermediate();
+    builder.AddDequantizeLinearNode<QuantType>(input_arg, scale, zero_point, input_arg_dq, use_contrib_qdq);
+
+    auto* space_to_depth_output = builder.MakeIntermediate();
+    constexpr int64_t blocksize = 2;
+    Node& space_to_depth_node = builder.AddNode("SpaceToDepth", {input_arg_dq}, {space_to_depth_output});
+    space_to_depth_node.AddAttribute("blocksize", blocksize);
+
+    // add DQ & Q
+    auto to_depth_q = builder.MakeIntermediate();
+    builder.AddQuantizeLinearNode<QuantType>(space_to_depth_output, scale, zero_point, to_depth_q, use_contrib_qdq);
+    auto to_depth_dq = builder.MakeIntermediate();
+    builder.AddDequantizeLinearNode<QuantType>(to_depth_q, scale, zero_point, to_depth_dq, use_contrib_qdq);
+
+    auto* depth_to_space_output = builder.MakeIntermediate();
+    Node& depth_to_space_node = builder.AddNode("DepthToSpace", {to_depth_dq}, {depth_to_space_output});
+    depth_to_space_node.AddAttribute("blocksize", blocksize);
+
+    // add Q
+    auto* output_arg = builder.MakeOutput();
+    builder.AddQuantizeLinearNode<QuantType>(depth_to_space_output, scale, zero_point, output_arg, use_contrib_qdq);
+  };
+
+  auto check_graph = [use_contrib_qdq](InferenceSessionWrapper& session) {
+    auto op_to_count = CountOpsInGraph(session.GetGraph());
+    const QDQOpKeys qdq_keys = GetQDQOpKeys(use_contrib_qdq);
+    EXPECT_EQ(op_to_count["DepthToSpace"], 1);
+    EXPECT_EQ(op_to_count["SpaceToDepth"], 1);
+    EXPECT_EQ(op_to_count[qdq_keys.quantize_linear], 0);
+    EXPECT_EQ(op_to_count[qdq_keys.dequantize_linear], 0);
+  };
+
+  TransformerTester(build_test_case, check_graph, TransformerLevel::Level1, TransformerLevel::Level2, opset);
+}
+
+// Checks that Q/DQ nodes are dropped from DQ -> SpaceToDepth -> Q -> DQ -> DepthToSpace -> Q.
+// Uses 8-bit and 16-bit Q/DQ ops.
+TEST(QDQTransformerTests, SpaceToDepthToSpaceDropQDQ) {
+  RunSpaceToDepthToSpaceDropQDQTestCase<int8_t>({1, 3, 4, 4});
+  RunSpaceToDepthToSpaceDropQDQTestCase<int16_t>({1, 3, 4, 4}, false);       // Use int16 ONNX QDQ ops
+  RunSpaceToDepthToSpaceDropQDQTestCase<uint16_t>({1, 3, 4, 4}, false);      // Use int16 ONNX QDQ ops
+}
+
 TEST(QDQTransformerTests, DoubleQDQ) {
   constexpr uint8_t good_u8_1 = 80;
   constexpr uint8_t good_u8_2 = 40;
