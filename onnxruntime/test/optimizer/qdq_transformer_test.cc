@@ -1365,11 +1365,66 @@ TEST(QDQTransformerTests, ReduceExtremumDropQDQ) {
   RunReduceExtremumDropQDQTestCase<int8_t>("ReduceMax", {3, 3}, 0.003f, true);
   RunReduceExtremumDropQDQTestCase<int8_t>("ReduceMax", {3, 3}, 0.003f, true, true, 13);    // Use com.microsoft QDQ ops
 
-  // Check that Q/DQ nodes are dropped for negative scale
+  // Check that Q/DQ nodes are *not* dropped for negative scale
   RunReduceExtremumDropQDQTestCase<int8_t>("ReduceMin", {3, 3}, -0.003f, false);
   RunReduceExtremumDropQDQTestCase<int8_t>("ReduceMin", {3, 3}, -0.003f, false, true, 13);    // Use com.microsoft QDQ ops
   RunReduceExtremumDropQDQTestCase<int8_t>("ReduceMax", {3, 3}, -0.003f, false);
   RunReduceExtremumDropQDQTestCase<int8_t>("ReduceMax", {3, 3}, -0.003f, false, true, 13);    // Use com.microsoft QDQ ops
+}
+
+// Runs a test case that checks if Q/DQ nodes are dropped from DQ -> Abs -> Q.
+template <typename QuantType>
+static void RunAbsDropQDQTestCase(const std::vector<int64_t>& input_shape,
+                                  float qscale,
+                                  bool expect_drop_qdq,
+                                  bool use_contrib_qdq = false,
+                                  int opset = 21) {
+  auto build_test_case = [input_shape, qscale, use_contrib_qdq](ModelTestBuilder& builder) {
+    constexpr QuantType qmin = std::numeric_limits<QuantType>::min();
+    constexpr QuantType qmax = std::numeric_limits<QuantType>::max();
+
+    auto* input_arg = builder.MakeInput<QuantType>(input_shape, qmin, qmax);
+    auto* output_arg = builder.MakeOutput();
+    QuantType zero_point = 1 + (qmax + qmin) / 2;
+
+    auto* input_arg_dq = builder.MakeIntermediate();
+    auto* abs_output = builder.MakeIntermediate();
+    builder.AddDequantizeLinearNode<QuantType>(input_arg, qscale, zero_point, input_arg_dq, use_contrib_qdq);
+    builder.AddNode("Abs", {input_arg_dq}, {abs_output});
+
+    // add Q
+    builder.AddQuantizeLinearNode<QuantType>(abs_output, qscale, zero_point, output_arg, use_contrib_qdq);
+  };
+
+  auto check_graph = [expect_drop_qdq, use_contrib_qdq](InferenceSessionWrapper& session) {
+    auto op_to_count = CountOpsInGraph(session.GetGraph());
+    const QDQOpKeys qdq_keys = GetQDQOpKeys(use_contrib_qdq);
+    EXPECT_EQ(op_to_count["Abs"], 1);
+    if (expect_drop_qdq) {
+      EXPECT_EQ(op_to_count[qdq_keys.quantize_linear], 0);
+      EXPECT_EQ(op_to_count[qdq_keys.dequantize_linear], 0);
+    } else {
+      EXPECT_EQ(op_to_count[qdq_keys.quantize_linear], 1);
+      EXPECT_EQ(op_to_count[qdq_keys.dequantize_linear], 1);
+    }
+  };
+
+  TransformerTester(build_test_case, check_graph, TransformerLevel::Level1, TransformerLevel::Level2, opset);
+}
+
+// Checks that Q/DQ nodes are dropped from DQ -> Abs -> Q. Uses 8-bit and 16-bit Q/DQ ops.
+TEST(QDQTransformerTests, AbsDropQDQ) {
+  // Check that Q/DQ nodes are dropped for positive scale
+  RunAbsDropQDQTestCase<int8_t>({1, 3, 5, 5}, .003f, true);
+  RunAbsDropQDQTestCase<int8_t>({1, 3, 5, 5}, .003f, true, true, 13);    // Use com.microsoft QDQ ops
+  RunAbsDropQDQTestCase<int16_t>({1, 3, 5, 5}, .003f, true, true, 13);   // Use int16 com.microsoft QDQ ops
+  RunAbsDropQDQTestCase<int16_t>({1, 3, 5, 5}, .003f, true, false);      // Use int16 ONNX QDQ ops
+
+  // Check that Q/DQ nodes are *not* dropped for negative scale
+  RunAbsDropQDQTestCase<int8_t>({1, 3, 5, 5}, -.125f, false);
+  RunAbsDropQDQTestCase<int8_t>({1, 3, 5, 5}, -.125f, false, true, 13);    // Use com.microsoft QDQ ops
+  RunAbsDropQDQTestCase<int16_t>({1, 3, 5, 5}, -.125f, false, true, 13);   // Use int16 com.microsoft QDQ ops
+  RunAbsDropQDQTestCase<int16_t>({1, 3, 5, 5}, -.125f, false, false);      // Use int16 ONNX QDQ ops
 }
 
 TEST(QDQTransformerTests, DoubleQDQ) {
