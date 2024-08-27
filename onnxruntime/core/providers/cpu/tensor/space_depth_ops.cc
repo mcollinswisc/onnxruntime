@@ -12,6 +12,9 @@
 
 namespace onnxruntime {
 
+// TODO: Should like use utilities from onnxruntime/core/providers/op_kernel_type_control.h
+// Similar to that see in split.cc, transpose.cc, gather.cc
+
 ONNX_CPU_OPERATOR_VERSIONED_KERNEL(
     SpaceToDepth,
     1,
@@ -105,6 +108,9 @@ Status SpaceToDepth::Compute(OpKernelContext* context) const {
   Tensor& output = *context->Output(0, {batch, output_depth, output_height, output_width});
 
   std::array<Eigen::DenseIndex, IntermediateTensorRank> permutation{{0, 3, 5, 1, 2, 4}};
+
+  // TODO: Ideally handle integer types of the same size (e.g. int8 and uint8 in the same branch)
+  // https://github.com/microsoft/onnxruntime/issues/21287#issuecomment-2249968498
 
   if (input.IsDataType<float>()) {
     SpaceDepthOpCpuImpl<float>(input, output, permutation,
