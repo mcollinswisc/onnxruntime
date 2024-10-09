@@ -525,10 +525,25 @@ class QLinearConvOpTester {
   QLinearConvOpTester() {
   }
 
+  void SetInput(const std::vector<int64_t>& shape, const std::vector<ActType>& data, float scale, ActType zero_point) {
+    X_.data_ = data;
+    X_.shape_ = shape;
+    X_.scale_ = {scale};
+    X_.zero_point_ = zero_point;
+  }
+
   void GenerateRandomInput(const std::vector<int64_t>& shape, float scale, ActType zero_point) {
     GenerateRandom(X_, shape, scale, zero_point,
                    std::numeric_limits<ActType>::min(),
                    std::numeric_limits<ActType>::max());
+  }
+
+  void SetWeights(const std::vector<int64_t>& shape, const std::vector<FilterType>& data, float scale,
+                  FilterType zero_point) {
+    W_.data_ = data;
+    W_.shape_ = shape;
+    W_.scale_ = {scale};
+    W_.zero_point_ = zero_point;
   }
 
   void GenerateRandomWeights(const std::vector<int64_t>& shape, float scale, FilterType zero_point) {
@@ -541,6 +556,10 @@ class QLinearConvOpTester {
 
   void SetWeightScales(const std::vector<float>& scales) {
     W_.scale_ = scales;
+  }
+
+  void SetBias(const std::vector<int32_t>& elements) {
+    B_ = elements;
   }
 
   void GenerateRandomBias() {
@@ -1518,6 +1537,39 @@ TEST(QLinearConvTest, Conv2D_S8S8_Depthwise_Kernelsize_PerChannel) {
   }
 
   TestQLinearConv2dDepthwiseKernelsizePerChannel<int8_t, int8_t>();
+}
+
+TEST(QLinearConvTest, Conv2D_U8S8U8_DifferentInputAndWeightSignedness) {
+  QLinearConvOpTester<uint8_t, int8_t> test;
+
+  const std::vector<int64_t> x_shape = {1, 1, 7, 7};  // NCHW
+  const std::vector<uint8_t> x_elements({186, 187, 182, 250, 243, 254, 8, 250, 129, 172, 233, 252, 247, 129, 84, 97, 180, 60, 222, 43, 124,
+                  221, 89, 236, 142, 62, 218, 26, 82, 70, 254, 66, 132, 30, 135, 35, 70, 88, 176, 81, 250, 118, 58, 137,
+                  31, 58, 59, 30, 135});
+  const float x_scale = 0.0074602230452001095f;
+  const uint8_t x_zero_point = 121;
+  test.SetInput(x_shape, x_elements, x_scale, x_zero_point);
+
+  const std::vector<int64_t> w_shape = {2, 1, 3, 3};  // OIHW
+  const std::vector<int8_t> w_elements({127, 35, -42, -59, -112, -57, 1, 4, 48, -128, -26, 36, -14, -21, 27, -1, 2,
+                                        44});
+  const float w_scale = 0.003882031422108412;
+  const int8_t w_zero_point = 0;
+  test.SetWeights(w_shape, w_elements, w_scale, w_zero_point);
+
+  const float y_scale = 0.0068216039799153805f;
+  const uint8_t y_zero_point = 0;
+  test.SetOutputScaleAndZeroPoint(y_scale, y_zero_point);
+
+  const std::vector<int32_t> B_elements({-713, -2150});
+  test.SetBias(B_elements);
+
+  test.SetPads({0, 0, 0, 0});
+  test.SetStrides({1, 1});
+  test.SetDilations({1, 1});
+  test.SetGroups(1);
+
+  test.Run();
 }
 
 #ifndef ENABLE_TRAINING
