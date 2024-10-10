@@ -14,7 +14,6 @@ Abstract:
     multiply operation (QGEMM).
 
     This implementation uses AVX2 and AVX VNNI instructions.
-    AVX-VNNI-INT8 support also included.
 
 --*/
 
@@ -24,20 +23,20 @@ Abstract:
         .intel_syntax noprefix
 
 //
-// Stack frame layout for the Int8 kernel.
+// Stack frame layout for the U8X8 kernel.
 //
 
-        .equ    .LGemmInt8KernelFrame_type, -8
-        .equ    .LGemmInt8KernelFrame_SavedR13, 0
-        .equ    .LGemmInt8KernelFrame_SavedR12, 8
-        .equ    .LGemmInt8KernelFrame_SavedRbx, 16
-        .equ    .LGemmInt8KernelFrame_SavedRbp, 24
-        .equ    .LGemmInt8KernelFrame_ReturnAddress, 32
-        .equ    .LGemmInt8KernelFrame_ldc, 40
-        .equ    .LGemmInt8KernelFrame_RowSumBuffer, 48
-        .equ    .LGemmInt8KernelFrame_ColumnSumBuffer, 56
-        .equ    .LGemmInt8KernelFrame_ZeroPointB, 64
-        .equ    .LGemmInt8KernelFrame_ZeroMode, 72
+        .equ    .LGemmU8X8KernelFrame_type, -8
+        .equ    .LGemmU8X8KernelFrame_SavedR13, 0
+        .equ    .LGemmU8X8KernelFrame_SavedR12, 8
+        .equ    .LGemmU8X8KernelFrame_SavedRbx, 16
+        .equ    .LGemmU8X8KernelFrame_SavedRbp, 24
+        .equ    .LGemmU8X8KernelFrame_ReturnAddress, 32
+        .equ    .LGemmU8X8KernelFrame_ldc, 40
+        .equ    .LGemmU8X8KernelFrame_RowSumBuffer, 48
+        .equ    .LGemmU8X8KernelFrame_ColumnSumBuffer, 56
+        .equ    .LGemmU8X8KernelFrame_ZeroPointB, 64
+        .equ    .LGemmU8X8KernelFrame_ZeroMode, 72
 
 /*++
 
@@ -116,7 +115,7 @@ Implicit Arguments:
 
 --*/
 
-        .macro ComputeBlockAvx2 ColumnCount, RowCount, VectorOffset, BroadcastOffset, ASigned, BSigned
+        .macro ComputeBlockU8S8Avx2 ColumnCount, RowCount, VectorOffset, BroadcastOffset
 
 .if \RowCount\() == 1
         vpbroadcastd ymm2,DWORD PTR [rdi+\BroadcastOffset\()]
@@ -171,40 +170,13 @@ Implicit Arguments:
 
 --*/
 
-        .macro MultiplyAccumulateRowAvxVnni ColumnCount, Vec1Reg, Vec2Reg, ASigned, BSigned
+        .macro MultiplyAccumulateRowU8S8AvxVnni ColumnCount, Vec1Reg, Vec2Reg
 
-.if \ASigned\() == 1
-    .if \BSigned\() == 1
-        .if \ColumnCount\() == 16
-            VpdpbssdYmmYmmYmm \Vec1Reg\(),ymm2,ymm0
-            VpdpbssdYmmYmmYmm \Vec2Reg\(),ymm2,ymm1
-        .else
-            VpdpbssdYmmYmmYmm \Vec2Reg\(),ymm2,ymm0
-        .endif
-    .else
-        .if \ColumnCount\() == 16
-            VpdpbsudYmmYmmYmm \Vec1Reg\(),ymm2,ymm0
-            VpdpbsudYmmYmmYmm \Vec2Reg\(),ymm2,ymm1
-        .else
-            VpdpbsudYmmYmmYmm \Vec2Reg\(),ymm2,ymm0
-        .endif
-    .endif
+.if \ColumnCount\() == 16
+        VpdpbusdsYmmYmmYmm \Vec1Reg\(),ymm2,ymm0
+        VpdpbusdsYmmYmmYmm \Vec2Reg\(),ymm2,ymm1
 .else
-    .if \BSigned\() == 1
-        .if \ColumnCount\() == 16
-            VpdpbusdYmmYmmYmm \Vec1Reg\(),ymm2,ymm0
-            VpdpbusdYmmYmmYmm \Vec2Reg\(),ymm2,ymm1
-        .else
-            VpdpbusdYmmYmmYmm \Vec2Reg\(),ymm2,ymm0
-        .endif
-    .else
-        .if \ColumnCount\() == 16
-            VpdpbuudYmmYmmYmm \Vec1Reg\(),ymm2,ymm0
-            VpdpbuudYmmYmmYmm \Vec2Reg\(),ymm2,ymm1
-        .else
-            VpdpbuudYmmYmmYmm \Vec2Reg\(),ymm2,ymm0
-        .endif
-    .endif
+        VpdpbusdsYmmYmmYmm \Vec2Reg\(),ymm2,ymm0
 .endif
 
         .endm
@@ -240,22 +212,22 @@ Implicit Arguments:
 
 --*/
 
-        .macro ComputeBlockAvxVnni ColumnCount, RowCount, VectorOffset, BroadcastOffset, ASigned, BSigned
+        .macro ComputeBlockU8S8AvxVnni ColumnCount, RowCount, VectorOffset, BroadcastOffset
 
         vmovdqu ymm0,YMMWORD PTR [rsi+\VectorOffset\()]
         EmitIfCountGE \ColumnCount\(), 16, "vmovdqu ymm1,YMMWORD PTR [rsi+\VectorOffset\()+32]"
         EmitIfCountGE \RowCount\(), 1, "vpbroadcastd ymm2,DWORD PTR [rdi+\BroadcastOffset\()]"
-        EmitIfCountGE \RowCount\(), 1, "MultiplyAccumulateRowAvxVnni \ColumnCount\(), ymm4, ymm5, \ASigned\(), \BSigned\()"
+        EmitIfCountGE \RowCount\(), 1, "MultiplyAccumulateRowU8S8AvxVnni \ColumnCount\(), ymm4, ymm5"
         EmitIfCountGE \RowCount\(), 2, "vpbroadcastd ymm2,DWORD PTR [rdi+rcx+\BroadcastOffset\()]"
-        EmitIfCountGE \RowCount\(), 2, "MultiplyAccumulateRowAvxVnni \ColumnCount\(), ymm6, ymm7, \ASigned\(), \BSigned\()"
+        EmitIfCountGE \RowCount\(), 2, "MultiplyAccumulateRowU8S8AvxVnni \ColumnCount\(), ymm6, ymm7"
         EmitIfCountGE \RowCount\(), 3, "vpbroadcastd ymm2,DWORD PTR [rdi+rcx*2+\BroadcastOffset\()]"
-        EmitIfCountGE \RowCount\(), 3, "MultiplyAccumulateRowAvxVnni \ColumnCount\(), ymm8, ymm9, \ASigned\(), \BSigned\()"
+        EmitIfCountGE \RowCount\(), 3, "MultiplyAccumulateRowU8S8AvxVnni \ColumnCount\(), ymm8, ymm9"
         EmitIfCountGE \RowCount\(), 4, "vpbroadcastd ymm2,DWORD PTR [r8+\BroadcastOffset\()]"
-        EmitIfCountGE \RowCount\(), 4, "MultiplyAccumulateRowAvxVnni \ColumnCount\(), ymm10, ymm11, \ASigned\(), \BSigned\()"
+        EmitIfCountGE \RowCount\(), 4, "MultiplyAccumulateRowU8S8AvxVnni \ColumnCount\(), ymm10, ymm11"
         EmitIfCountGE \RowCount\(), 5, "vpbroadcastd ymm2,DWORD PTR [r8+rcx+\BroadcastOffset\()]"
-        EmitIfCountGE \RowCount\(), 5, "MultiplyAccumulateRowAvxVnni \ColumnCount\(), ymm12, ymm13, \ASigned\(), \BSigned\()"
+        EmitIfCountGE \RowCount\(), 5, "MultiplyAccumulateRowU8S8AvxVnni \ColumnCount\(), ymm12, ymm13"
         EmitIfCountGE \RowCount\(), 6, "vpbroadcastd ymm2,DWORD PTR [r8+rcx*2+\BroadcastOffset\()]"
-        EmitIfCountGE \RowCount\(), 6, "MultiplyAccumulateRowAvxVnni \ColumnCount\(), ymm14, ymm15, \ASigned\(), \BSigned\()"
+        EmitIfCountGE \RowCount\(), 6, "MultiplyAccumulateRowU8S8AvxVnni \ColumnCount\(), ymm14, ymm15"
 
         .endm
 
@@ -288,7 +260,7 @@ Implicit Arguments:
 
 --*/
 
-        .macro ComputeBlockLoop Isa, ColumnCount, RowCount, ASigned, BSigned
+        .macro ComputeBlockLoopU8S8 Isa, ColumnCount, RowCount
 
         mov     rbp,rcx                     # reload row length remaining
 
@@ -297,10 +269,10 @@ Implicit Arguments:
         jb      .LProcessRemainingBlocks\@
 
 .LComputeBlockBy4Loop\@:
-        ComputeBlock\Isa\() \ColumnCount\(), \RowCount\(), 0*64, 0, \ASigned\(), \BSigned\()
-        ComputeBlock\Isa\() \ColumnCount\(), \RowCount\(), 1*64, 4, \ASigned\(), \BSigned\()
-        ComputeBlock\Isa\() \ColumnCount\(), \RowCount\(), 2*64, 8, \ASigned\(), \BSigned\()
-        ComputeBlock\Isa\() \ColumnCount\(), \RowCount\(), 3*64, 12, \ASigned\(), \BSigned\()
+        ComputeBlockU8S8\Isa\() \ColumnCount\(), \RowCount\(), 0*64, 0
+        ComputeBlockU8S8\Isa\() \ColumnCount\(), \RowCount\(), 1*64, 4
+        ComputeBlockU8S8\Isa\() \ColumnCount\(), \RowCount\(), 2*64, 8
+        ComputeBlockU8S8\Isa\() \ColumnCount\(), \RowCount\(), 3*64, 12
         add     rdi,4*4                     # advance matrix A by 4 quads
         add     rsi,4*64                    # advance matrix B
         sub     rbp,4*4
@@ -312,7 +284,7 @@ Implicit Arguments:
 .endif
 
 .LComputeBlockBy1Loop\@:
-        ComputeBlock\Isa\() \ColumnCount\(), \RowCount\(), 0, 0, \ASigned\(), \BSigned\()
+        ComputeBlockU8S8\Isa\() \ColumnCount\(), \RowCount\(), 0, 0
         add     rdi,4                       # advance matrix A by 1 quad
 .if \RowCount\() > 3
         add     r8,4                        # advance matrix A plus 3 rows by 1 quad
@@ -515,7 +487,7 @@ Implicit Arguments:
 
 --*/
 
-        .macro ProduceOutputBlock ColumnCount, RowCount, ASigned, BSigned
+        .macro ProduceOutputBlock ColumnCount, RowCount
 
 //
 // Initialize the accumulators with the row and column sums.
@@ -593,16 +565,16 @@ Implicit Arguments:
         lea     r8,[rcx*2+rcx]
         add     r8,rdi                      # compute matrix A plus 3 rows
 .endif
-        cmp     DWORD PTR .LGemmInt8KernelFrame_type[rsp],0
+        cmp     DWORD PTR .LGemmU8X8KernelFrame_type[rsp],0
         jg      .LProduceWithU8U8Avx2\@
 .if \RowCount\() <= 4
-        jl      .LProduceWithInt8AvxVnni\@
-        ComputeBlockLoop Avx2, \ColumnCount\(), \RowCount\(), \ASigned\(), \BSigned\()
+        jl      .LProduceWithU8S8AvxVnni\@
+        ComputeBlockLoopU8S8 Avx2, \ColumnCount\(), \RowCount\()
         jmp     .LExitProduceOutputBlock\@
 .endif
 
-.LProduceWithInt8AvxVnni\@:
-        ComputeBlockLoop AvxVnni, \ColumnCount\(), \RowCount\(), \ASigned\(), \BSigned\()
+.LProduceWithU8S8AvxVnni\@:
+        ComputeBlockLoopU8S8 AvxVnni, \ColumnCount\(), \RowCount\()
         jmp     .LExitProduceOutputBlock\@
 
 .LProduceWithU8U8Avx2\@:
@@ -652,13 +624,13 @@ Implicit Arguments:
 
 --*/
 
-        .macro ProcessCountM RowCount, ASigned, BSigned
+        .macro ProcessCountM RowCount
 
         cmp     r9,8
         jbe     .LProcessRemainingCountN\@
 
 .LProcessNextColumnLoop16xN\@:
-        ProduceOutputBlock 16, \RowCount\(), \ASigned\(), \BSigned\()
+        ProduceOutputBlock 16, \RowCount\()
         sub     r9,16
         jb      .LOutputMasked16xNBlock\@
         test    r10b,r10b                   # ZeroMode?
@@ -701,7 +673,7 @@ Implicit Arguments:
         jmp     .LExitKernel
 
 .LProcessRemainingCountN\@:
-        ProduceOutputBlock 8, \RowCount\(), \ASigned\(), \BSigned\()
+        ProduceOutputBlock 8, \RowCount\()
         cmp     r9,8
         jb      .LOutputMasked8xNBlock\@
         test    r10b,r10b                   # ZeroMode?
@@ -775,6 +747,26 @@ Implicit Arguments:
 
         .endm
 
+//
+// Reduce code size for the various types of kernels by sharing the outer logic
+// and switching on the selector codes (using sign bit to discriminate).
+//
+
+        FUNCTION_ENTRY MlasGemmU8S8KernelAvxVnni
+
+        mov     eax,-1
+        jmp     C_UNDERSCORE(MlasGemmU8X8KernelAvx2)
+
+        FUNCTION_ENTRY MlasGemmU8U8KernelAvx2
+
+        mov     eax,1
+        jmp     C_UNDERSCORE(MlasGemmU8X8KernelAvx2)
+
+        FUNCTION_ENTRY MlasGemmU8S8KernelAvx2
+
+        xor     eax,eax
+        jmp     C_UNDERSCORE(MlasGemmU8X8KernelAvx2)
+
 /*++
 
 Routine Description:
@@ -785,10 +777,10 @@ Routine Description:
 Arguments:
 
     A (rdi) - Supplies the address of matrix A. The matrix data has been packed
-        using MlasGemmCopyPackAAvx2.
+        using MlasGemmU8X8CopyPackAAvx2.
 
     B (rsi) - Supplies the address of matrix B. The matrix data has been packed
-        using MlasGemmCopyPackBAvx2.
+        using MlasGemmU8X8CopyPackBAvx2.
 
     C (rdx) - Supplies the address of matrix C.
 
@@ -826,62 +818,51 @@ Return Value:
 
 --*/
 
-.macro MlasGemmInt8KernelAvx2 ASigned, BSigned
+        FUNCTION_ENTRY MlasGemmU8X8KernelAvx2
 
         push    rbp
         push    rbx
         push    r12
         push    r13
 
-        mov     DWORD PTR .LGemmInt8KernelFrame_type[rsp],eax
+        mov     DWORD PTR .LGemmU8X8KernelFrame_type[rsp],eax
         mov     rbx,rdi
-        mov     rax,.LGemmInt8KernelFrame_ldc[rsp]
+        mov     rax,.LGemmU8X8KernelFrame_ldc[rsp]
         shl     rax,2                       # convert ldc to bytes
         shl     rcx,2                       # convert to row length
-        movzx   r10,BYTE PTR .LGemmInt8KernelFrame_ZeroMode[rsp]
-        mov     r11,.LGemmInt8KernelFrame_RowSumBuffer[rsp]
-        mov     r12,.LGemmInt8KernelFrame_ColumnSumBuffer[rsp]
-        mov     r13,.LGemmInt8KernelFrame_ZeroPointB[rsp]
+        movzx   r10,BYTE PTR .LGemmU8X8KernelFrame_ZeroMode[rsp]
+        mov     r11,.LGemmU8X8KernelFrame_RowSumBuffer[rsp]
+        mov     r12,.LGemmU8X8KernelFrame_ColumnSumBuffer[rsp]
+        mov     r13,.LGemmU8X8KernelFrame_ZeroPointB[rsp]
         vpcmpeqw ymm12,ymm12,ymm12          # generate 256-bit word vector [0xFFFF]
         vpsrlw  ymm12,ymm12,15              # generate 256-bit word vector [0x0001]
-        cmp     DWORD PTR .LGemmInt8KernelFrame_type[rsp],0
-        je      .LCheckCountM4OrMore\@        # U8S8 AVX2 kernel requires extra registers
+        cmp     DWORD PTR .LGemmU8X8KernelFrame_type[rsp],0
+        je      .LCheckCountM4OrMore        # U8S8 AVX2 kernel requires extra registers
 
 //
 // Process CountM rows of the matrices.
 //
 
-.LCheckCountM6OrMore\@:
+.LCheckCountM6OrMore:
         cmp     r8,5
-        ja      .LProcessCountM6\@
-        je      .LProcessCountM5\@
+        ja      .LProcessCountM6
+        je      .LProcessCountM5
 
-.LCheckCountM4OrMore\@:
+.LCheckCountM4OrMore:
         cmp     r8,3
-        ja      .LProcessCountM4\@
-        je      .LProcessCountM3\@
+        ja      .LProcessCountM4
+        je      .LProcessCountM3
         cmp     r8,1
-        je      .LProcessCountM1\@
+        je      .LProcessCountM1
 
-.LProcessCountM2\@:
-        ProcessCountM 2, \ASigned\(), \BSigned\()
+.LProcessCountM2:
+        ProcessCountM 2
 
-.LProcessCountM4\@:
-        ProcessCountM 4, \ASigned\(), \BSigned\()
+.LProcessCountM4:
+        ProcessCountM 4
 
-.LProcessCountM6\@:
-        ProcessCountM 6, \ASigned\(), \BSigned\()
-
-.LProcessCountM1\@:
-        ProcessCountM 1, \ASigned\(), \BSigned\()
-
-.LProcessCountM3\@:
-        ProcessCountM 3, \ASigned\(), \BSigned\()
-
-.LProcessCountM5\@:
-        ProcessCountM 5, \ASigned\(), \BSigned\()
-
-.endm
+.LProcessCountM6:
+        ProcessCountM 6
 
 //
 // Restore non-volatile registers and return.
@@ -896,39 +877,13 @@ Return Value:
         pop     rbp
         ret
 
-//
-// Reduce code size for the various types of kernels by sharing the outer logic
-// and switching on the selector codes (using sign bit to discriminate).
-//
+.LProcessCountM1:
+        ProcessCountM 1
 
-        FUNCTION_ENTRY MlasGemmU8S8KernelAvxVnni
+.LProcessCountM3:
+        ProcessCountM 3
 
-        mov     eax,-1
-        MlasGemmInt8KernelAvx2 0, 1
-
-        FUNCTION_ENTRY MlasGemmU8U8KernelAvx2Vnni
-
-        mov     eax,-1
-        MlasGemmInt8KernelAvx2 0, 0
-
-        FUNCTION_ENTRY MlasGemmU8U8KernelAvx2
-
-        mov     eax,1
-        MlasGemmInt8KernelAvx2 0, 0
-
-        FUNCTION_ENTRY MlasGemmU8S8KernelAvx2
-
-        xor     eax,eax
-        MlasGemmInt8KernelAvx2 0, 1
-
-        FUNCTION_ENTRY MlasGemmS8S8KernelAvx2Vnni
-
-        mov     eax,-1
-        MlasGemmInt8KernelAvx2 1, 1
-
-        FUNCTION_ENTRY MlasGemmS8U8KernelAvx2Vnni
-
-        mov     eax,-1
-        MlasGemmInt8KernelAvx2 1, 0
+.LProcessCountM5:
+        ProcessCountM 5
 
         .end
