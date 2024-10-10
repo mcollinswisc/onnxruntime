@@ -27,6 +27,7 @@ static size_t QGemmRegistLongExecute() {
   return count;
 }
 
+
 static size_t QGemmRegistShortExecute() {
   size_t count = 0;
 
@@ -94,5 +95,10 @@ static size_t QGemmRegistShortExecute() {
 }
 
 static UNUSED_VARIABLE bool added_to_main = AddTestRegister([](bool is_short_execute) {
-  return is_short_execute ? QGemmRegistShortExecute() : QGemmRegistLongExecute();
+  size_t count = 0;
+
+  count += QgemmFromConvExecuteTest::RegisterTest();
+  count += is_short_execute ? QGemmRegistShortExecute() : QGemmRegistLongExecute();
+
+  return count;
 });

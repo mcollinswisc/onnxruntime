@@ -512,3 +512,44 @@ class MlasQgemmTest<AType, BType, float, Packed, Threaded> : public MlasQgemmTes
     return suite_name.c_str();
   }
 };
+
+// Special case found in QLinearConv testing
+class MlasQgemmFromConvTest : public MlasQgemmTest<uint8_t, int8_t, int32_t, false, false> {
+ public:
+  void Test() {
+    constexpr size_t BatchSize = 1;
+    constexpr size_t M = 25;
+    constexpr size_t N = 2;
+    constexpr size_t K = 9;
+
+    const uint8_t ZeroPointA = 121;
+    const uint8_t ZeroPointB = 0;
+
+    MatrixGuardBuffer<int32_t> BufferC;
+    int32_t* C = BufferC.GetBuffer(N * M * BatchSize);
+    MatrixGuardBuffer<int32_t> BufferCReference;
+    int32_t* CReference = BufferCReference.GetBuffer(N * M * BatchSize);
+
+    const std::vector<uint8_t> A = {
+        186, 187, 182, 250, 129, 172, 84, 97, 180, 187, 182, 250, 129, 172, 233, 97, 180, 60, 182, 250, 243, 172, 233,
+        252, 180, 60, 222, 250, 243, 254, 233, 252, 247, 60, 222, 43, 243, 254, 8, 252, 247, 129, 222, 43, 124, 250,
+        129, 172, 84, 97, 180, 221, 89, 236, 129, 172, 233, 97, 180, 60, 89, 236, 142, 172, 233, 252, 180, 60, 222, 236,
+        142, 62, 233, 252, 247, 60, 222, 43, 142, 62, 218, 252, 247, 129, 222, 43, 124, 62, 218, 26, 84, 97, 180, 221,
+        89, 236, 82, 70, 254, 97, 180, 60, 89, 236, 142, 70, 254, 66, 180, 60, 222, 236, 142, 62, 254, 66, 132, 60, 222,
+        43, 142, 62, 218, 66, 132, 30, 222, 43, 124, 62, 218, 26, 132, 30, 135, 221, 89, 236, 82, 70, 254, 35, 70, 88,
+        89, 236, 142, 70, 254, 66, 70, 88, 176, 236, 142, 62, 254, 66, 132, 88, 176, 81, 142, 62, 218, 66, 132, 30, 176,
+        81, 250, 62, 218, 26, 132, 30, 135, 81, 250, 118, 82, 70, 254, 35, 70, 88, 58, 137, 31, 70, 254, 66, 70, 88,
+        176, 137, 31, 58, 254, 66, 132, 88, 176, 81, 31, 58, 59, 66, 132, 30, 176, 81, 250, 58, 59, 30, 132, 30, 135,
+        81, 250, 118, 59, 30, 135};
+    ASSERT_EQ(A.size(), M*K*BatchSize);
+
+    const std::vector<int8_t> B = {
+      127, -128, 35, -26, -42, 36, -59, -14, -112, -21, -57, 27, 1, -1, 4, 2, 48, 44,
+    };
+    ASSERT_EQ(B.size(), N*K*BatchSize);
+
+    MlasQgemmTest<uint8_t, int8_t, int32_t, false, false>::Test(
+      M, N, K, BatchSize, A.data(), K, ZeroPointA, reinterpret_cast<const uint8_t*>(B.data()), N, ZeroPointB, C,
+      CReference, N);
+  }
+};

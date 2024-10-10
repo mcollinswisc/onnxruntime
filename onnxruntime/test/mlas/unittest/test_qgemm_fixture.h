@@ -180,3 +180,28 @@ class QgemmShortExecuteTest<AType, BType, float, Packed, Threaded> : public Mlas
   size_t M_, N_, K_;
   uint8_t offa_, offb_;
 };
+
+
+class QgemmFromConvExecuteTest : public MlasTestFixture<MlasQgemmFromConvTest> {
+ public:
+  void TestBody() override {
+    MlasTestFixture<MlasQgemmFromConvTest>::mlas_tester->Test();
+  }
+
+  static size_t RegisterTest() {
+    const char test_suite_name[] = "QGemmU8S8_Int32_NoPack_SingleThread_SpecialCase";
+    const char test_name[] = "CaseFromQLinearConv";
+    testing::RegisterTest(
+        test_suite_name,
+        test_name,
+        nullptr,
+        test_name,
+        __FILE__,
+        __LINE__,
+        // Important to use the fixture type as the return type here.
+        [=]() -> MlasTestFixture<MlasQgemmFromConvTest>* {
+          return new QgemmFromConvExecuteTest;
+        });
+    return 1;
+  }
+};
