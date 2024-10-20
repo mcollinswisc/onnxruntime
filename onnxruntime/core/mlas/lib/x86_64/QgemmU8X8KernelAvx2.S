@@ -70,12 +70,10 @@ Implicit Arguments:
 
         .macro MultiplyAccumulateRowU8S8Avx2 ColumnCount, Vec1Reg, Vec2Reg
 
-        vpmaddubsw ymm3,ymm2,ymm0
-        vpmaddwd ymm3,ymm3,ymm12
+        vpmaddwd ymm3,ymm2,ymm0
 .if \ColumnCount\() == 16
         vpaddd  \Vec1Reg\(),\Vec1Reg\(),ymm3
-        vpmaddubsw ymm2,ymm2,ymm1
-        vpmaddwd ymm2,ymm2,ymm12
+        vpmaddwd ymm2,ymm2,ymm1
         vpaddd  \Vec2Reg\(),\Vec2Reg\(),ymm2
 .else
         vpaddd  \Vec2Reg\(),\Vec2Reg\(),ymm3
@@ -118,21 +116,8 @@ Implicit Arguments:
 
         .macro ComputeBlockAvx2 ColumnCount, RowCount, VectorOffset, BroadcastOffset, ASigned, BSigned
 
-.if \RowCount\() == 1
-        vpbroadcastd ymm2,DWORD PTR [rdi+\BroadcastOffset\()]
-        vpmaddubsw ymm3,ymm2,YMMWORD PTR [rsi+\VectorOffset\()]
-        vpmaddwd ymm3,ymm3,ymm12
-.if \ColumnCount\() == 16
-        vpaddd  ymm4,ymm4,ymm3
-        vpmaddubsw ymm2,ymm2,YMMWORD PTR [rsi+\VectorOffset\()+32]
-        vpmaddwd ymm2,ymm2,ymm12
-        vpaddd  ymm5,ymm5,ymm2
-.else
-        vpaddd  ymm5,ymm5,ymm3
-.endif
-.else
-        vmovdqu ymm0,YMMWORD PTR [rsi+\VectorOffset\()]
-        EmitIfCountGE \ColumnCount\(), 16, "vmovdqu ymm1,YMMWORD PTR [rsi+\VectorOffset\()+32]"
+        vpmovsxbw ymm0,XMMWORD PTR [rsi+\VectorOffset\()]
+        EmitIfCountGE \ColumnCount\(), 16, "vpmovsxbw ymm1,XMMWORD PTR [rsi+\VectorOffset\()+32]"
         EmitIfCountGE \RowCount\(), 1, "vpbroadcastd ymm2,DWORD PTR [rdi+\BroadcastOffset\()]"
         EmitIfCountGE \RowCount\(), 1, "MultiplyAccumulateRowU8S8Avx2 \ColumnCount\(), ymm4, ymm5"
         EmitIfCountGE \RowCount\(), 2, "vpbroadcastd ymm2,DWORD PTR [rdi+rcx+\BroadcastOffset\()]"
@@ -141,7 +126,6 @@ Implicit Arguments:
         EmitIfCountGE \RowCount\(), 3, "MultiplyAccumulateRowU8S8Avx2 \ColumnCount\(), ymm8, ymm9"
         EmitIfCountGE \RowCount\(), 4, "vpbroadcastd ymm2,DWORD PTR [r8+\BroadcastOffset\()]"
         EmitIfCountGE \RowCount\(), 4, "MultiplyAccumulateRowU8S8Avx2 \ColumnCount\(), ymm10, ymm11"
-.endif
 
         .endm
 
@@ -299,12 +283,12 @@ Implicit Arguments:
         jb      .LProcessRemainingBlocks\@
 
 .LComputeBlockBy4Loop\@:
-        ComputeBlockAvx2 \ColumnCount\(), \RowCount\(), 0*64, 0, \ASigned\(), \BSigned\()
-        ComputeBlockAvx2 \ColumnCount\(), \RowCount\(), 1*64, 4, \ASigned\(), \BSigned\()
-        ComputeBlockAvx2 \ColumnCount\(), \RowCount\(), 2*64, 8, \ASigned\(), \BSigned\()
-        ComputeBlockAvx2 \ColumnCount\(), \RowCount\(), 3*64, 12, \ASigned\(), \BSigned\()
-        add     rdi,4*4                     # advance matrix A by 4 quads
-        add     rsi,4*64                    # advance matrix B
+        ComputeBlockAvx2 \ColumnCount\(), \RowCount\(), 0*32, 0, \ASigned\(), \BSigned\()
+        ComputeBlockAvx2 \ColumnCount\(), \RowCount\(), 1*32, 4, \ASigned\(), \BSigned\()
+        ComputeBlockAvx2 \ColumnCount\(), \RowCount\(), 2*32, 8, \ASigned\(), \BSigned\()
+        ComputeBlockAvx2 \ColumnCount\(), \RowCount\(), 3*32, 12, \ASigned\(), \BSigned\()
+        add     rdi,2*4                     # advance matrix A by 2 pairs
+        add     rsi,2*32                    # advance matrix B
         sub     rbp,4*4
         jae     .LComputeBlockBy4Loop\@
 
@@ -315,11 +299,11 @@ Implicit Arguments:
 
 .LComputeBlockBy1Loop\@:
         ComputeBlockAvx2 \ColumnCount\(), \RowCount\(), 0, 0, \ASigned\(), \BSigned\()
-        add     rdi,4                       # advance matrix A by 1 quad
+        add     rdi,4                       # advance matrix A by 1 pair
 .if \RowCount\() > 3
-        add     r8,4                        # advance matrix A plus 3 rows by 1 quad
+        add     r8,4                        # advance matrix A plus 3 rows by 1 pair
 .endif
-        add     rsi,64                      # advance matrix B
+        add     rsi,32                      # advance matrix B
         sub     rbp,4
         jnz     .LComputeBlockBy1Loop\@
 

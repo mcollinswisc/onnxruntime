@@ -35,7 +35,7 @@ extern "C" {
     void
     MLASCALL
     MlasGemmU8S8CopyPackAAvx2(
-        uint8_t* D,
+        uint8_t* D,  // TODO: Need to update the assembly accordingly?
         const uint8_t* A,
         size_t lda,
         size_t CountM,
@@ -113,12 +113,12 @@ extern "C" {
 
 struct MLAS_GEMM_U8S8_KERNEL_AVX2
 {
-    typedef uint8_t PackedAType;
+    typedef int16_t PackedAType;
     typedef uint8_t PackedBType;
     typedef uint8_t OffsetAType;
     typedef int8_t OffsetBType;
 
-    static constexpr size_t PackedK = 4;
+    static constexpr size_t PackedK = 2;
     static constexpr MLAS_GEMM_QUANT_STRIDES Strides{ 24, 256, 128 };
     static constexpr MLAS_GEMM_QUANT_STRIDES PackedStrides{ 48, 256, 384 };
 };
@@ -178,7 +178,7 @@ MlasGemmQuantCopyPackA<MLAS_GEMM_U8S8_KERNEL_AVX2>(
     )
 {
     MLAS_UNREFERENCED_PARAMETER(AIsSigned);
-    MlasGemmU8S8CopyPackAAvx2(D, A, lda, CountM, CountK, RowSumBuffer);
+    MlasGemmU8U8CopyPackAAvx2(D, A, lda, CountM, CountK, RowSumBuffer);
 }
 
 template<>
@@ -214,6 +214,7 @@ MlasGemmQuantKernel<MLAS_GEMM_U8S8_KERNEL_AVX2>(
     bool ZeroMode
     )
 {
+    /*
     std::cout << "A: " << static_cast<int>(A[0]) << ", " << static_cast<int>(A[1]) << std::endl;
     std::cout << "B: " << static_cast<int>(B[0]) << ", " << static_cast<int>(B[1]) << std::endl;
     std::cout << "PackedCountK: " << PackedCountK << std::endl;
@@ -227,9 +228,11 @@ MlasGemmQuantKernel<MLAS_GEMM_U8S8_KERNEL_AVX2>(
         std::cout << "ZeroPointB: " << ZeroPointB[0] << std::endl;
     }
     std::cout << "zeroMode: " << (ZeroMode ? "true" : "false") << std::endl;
-    auto ret = GetMlasPlatform().GemmU8S8Kernel(A, B, C, PackedCountK, CountM, CountN, ldc,
+    */
+
+    // TODO: Will also need to split packing & dispatching for Avx2 vs AvxVnni
+    auto ret = GetMlasPlatform().GemmU8S8Kernel(reinterpret_cast<const uint8_t*>(A), B, C, PackedCountK, CountM, CountN, ldc,
                                                 RowSumBuffer, ColumnSumBuffer, ZeroPointB, ZeroMode);
-    std::cout << "C: " << C[0] << std::endl;
     return ret;
 }
 
