@@ -14,6 +14,8 @@ Abstract:
 
 --*/
 
+#include <iostream>
+
 #include "mlasi.h"
 #include "qgemm.h"
 
@@ -212,8 +214,23 @@ MlasGemmQuantKernel<MLAS_GEMM_U8S8_KERNEL_AVX2>(
     bool ZeroMode
     )
 {
-    return GetMlasPlatform().GemmU8S8Kernel(A, B, C, PackedCountK, CountM, CountN, ldc,
-                                            RowSumBuffer, ColumnSumBuffer, ZeroPointB, ZeroMode);
+    std::cout << "A: " << static_cast<int>(A[0]) << ", " << static_cast<int>(A[1]) << std::endl;
+    std::cout << "B: " << static_cast<int>(B[0]) << ", " << static_cast<int>(B[1]) << std::endl;
+    std::cout << "PackedCountK: " << PackedCountK << std::endl;
+    std::cout << "CountM: " << CountM << std::endl;
+    std::cout << "CountN: " << CountN << std::endl;
+    std::cout << "ldc: " << ldc << std::endl;
+    std::cout << "ldc: " << ldc << std::endl;
+    std::cout << "RowSumBuffer: " << RowSumBuffer[0] << std::endl;
+    std::cout << "ColumnSumBuffer: " << ColumnSumBuffer[0] << std::endl;
+    if (ZeroPointB != nullptr) {
+        std::cout << "ZeroPointB: " << ZeroPointB[0] << std::endl;
+    }
+    std::cout << "zeroMode: " << (ZeroMode ? "true" : "false") << std::endl;
+    auto ret = GetMlasPlatform().GemmU8S8Kernel(A, B, C, PackedCountK, CountM, CountN, ldc,
+                                                RowSumBuffer, ColumnSumBuffer, ZeroPointB, ZeroMode);
+    std::cout << "C: " << C[0] << std::endl;
+    return ret;
 }
 
 const MLAS_GEMM_QUANT_DISPATCH MlasGemmU8S8DispatchAvx2 = {
