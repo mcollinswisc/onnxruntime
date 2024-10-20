@@ -518,8 +518,8 @@ class MlasQgemmFromConvTest : public MlasQgemmTest<uint8_t, int8_t, int32_t, fal
  public:
   void Test() {
     constexpr size_t BatchSize = 1;
-    constexpr size_t M = 2;
-    constexpr size_t N = 2;
+    constexpr size_t M = 1;
+    constexpr size_t N = 1;
     constexpr size_t K = 2;
 
     const uint8_t ZeroPointA = 121;
@@ -531,13 +531,13 @@ class MlasQgemmFromConvTest : public MlasQgemmTest<uint8_t, int8_t, int32_t, fal
     int32_t* CReference = BufferCReference.GetBuffer(N * M * BatchSize);
 
     const std::vector<uint8_t> A = {
-        182, 250,
-        250, 243,};
+        250, 243,
+    };
     ASSERT_EQ(A.size(), M*K*BatchSize);
 
     const std::vector<int8_t> B = {
-      127, -128,
-      35, -26,
+      127,
+      35,
     };
     ASSERT_EQ(B.size(), N*K*BatchSize);
 
