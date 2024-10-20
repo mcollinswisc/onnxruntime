@@ -266,6 +266,8 @@ Macro Description:
     This macro generates code to execute the block compute macro multiple times
     and advancing the matrix A and matrix B data pointers.
 
+    TODO: Update description
+
 Arguments:
 
     Isa - Supplies the instruction set architecture string.
@@ -288,7 +290,7 @@ Implicit Arguments:
 
 --*/
 
-        .macro ComputeBlockLoop Isa, ColumnCount, RowCount, ASigned, BSigned
+        .macro ComputeBlockLoopAvx2 ColumnCount, RowCount, ASigned, BSigned
 
         mov     rbp,rcx                     # reload row length remaining
 
@@ -297,10 +299,10 @@ Implicit Arguments:
         jb      .LProcessRemainingBlocks\@
 
 .LComputeBlockBy4Loop\@:
-        ComputeBlock\Isa\() \ColumnCount\(), \RowCount\(), 0*64, 0, \ASigned\(), \BSigned\()
-        ComputeBlock\Isa\() \ColumnCount\(), \RowCount\(), 1*64, 4, \ASigned\(), \BSigned\()
-        ComputeBlock\Isa\() \ColumnCount\(), \RowCount\(), 2*64, 8, \ASigned\(), \BSigned\()
-        ComputeBlock\Isa\() \ColumnCount\(), \RowCount\(), 3*64, 12, \ASigned\(), \BSigned\()
+        ComputeBlockAvx2 \ColumnCount\(), \RowCount\(), 0*64, 0, \ASigned\(), \BSigned\()
+        ComputeBlockAvx2 \ColumnCount\(), \RowCount\(), 1*64, 4, \ASigned\(), \BSigned\()
+        ComputeBlockAvx2 \ColumnCount\(), \RowCount\(), 2*64, 8, \ASigned\(), \BSigned\()
+        ComputeBlockAvx2 \ColumnCount\(), \RowCount\(), 3*64, 12, \ASigned\(), \BSigned\()
         add     rdi,4*4                     # advance matrix A by 4 quads
         add     rsi,4*64                    # advance matrix B
         sub     rbp,4*4
@@ -312,7 +314,48 @@ Implicit Arguments:
 .endif
 
 .LComputeBlockBy1Loop\@:
-        ComputeBlock\Isa\() \ColumnCount\(), \RowCount\(), 0, 0, \ASigned\(), \BSigned\()
+        ComputeBlockAvx2 \ColumnCount\(), \RowCount\(), 0, 0, \ASigned\(), \BSigned\()
+        add     rdi,4                       # advance matrix A by 1 quad
+.if \RowCount\() > 3
+        add     r8,4                        # advance matrix A plus 3 rows by 1 quad
+.endif
+        add     rsi,64                      # advance matrix B
+        sub     rbp,4
+        jnz     .LComputeBlockBy1Loop\@
+
+.LComputeBlockLoopExit\@:
+
+        .endm
+
+/*++
+  TODO: describe this
+--*/
+
+        .macro ComputeBlockLoopAvxVnni ColumnCount, RowCount, ASigned, BSigned
+
+        mov     rbp,rcx                     # reload row length remaining
+
+.if (\ColumnCount\() == 16) && (\RowCount\() == 1)
+        sub     rbp,4*4
+        jb      .LProcessRemainingBlocks\@
+
+.LComputeBlockBy4Loop\@:
+        ComputeBlockAvxVnni \ColumnCount\(), \RowCount\(), 0*64, 0, \ASigned\(), \BSigned\()
+        ComputeBlockAvxVnni \ColumnCount\(), \RowCount\(), 1*64, 4, \ASigned\(), \BSigned\()
+        ComputeBlockAvxVnni \ColumnCount\(), \RowCount\(), 2*64, 8, \ASigned\(), \BSigned\()
+        ComputeBlockAvxVnni \ColumnCount\(), \RowCount\(), 3*64, 12, \ASigned\(), \BSigned\()
+        add     rdi,4*4                     # advance matrix A by 4 quads
+        add     rsi,4*64                    # advance matrix B
+        sub     rbp,4*4
+        jae     .LComputeBlockBy4Loop\@
+
+.LProcessRemainingBlocks\@:
+        add     rbp,4*4                     # correct for over-subtract above
+        jz      .LComputeBlockLoopExit\@
+.endif
+
+.LComputeBlockBy1Loop\@:
+        ComputeBlockAvxVnni \ColumnCount\(), \RowCount\(), 0, 0, \ASigned\(), \BSigned\()
         add     rdi,4                       # advance matrix A by 1 quad
 .if \RowCount\() > 3
         add     r8,4                        # advance matrix A plus 3 rows by 1 quad
@@ -597,12 +640,12 @@ Implicit Arguments:
         jg      .LProduceWithU8U8Avx2\@
 .if \RowCount\() <= 4
         jl      .LProduceWithInt8AvxVnni\@
-        ComputeBlockLoop Avx2, \ColumnCount\(), \RowCount\(), \ASigned\(), \BSigned\()
+        ComputeBlockLoopAvx2 \ColumnCount\(), \RowCount\(), \ASigned\(), \BSigned\()
         jmp     .LExitProduceOutputBlock\@
 .endif
 
 .LProduceWithInt8AvxVnni\@:
-        ComputeBlockLoop AvxVnni, \ColumnCount\(), \RowCount\(), \ASigned\(), \BSigned\()
+        ComputeBlockLoopAvxVnni \ColumnCount\(), \RowCount\(), \ASigned\(), \BSigned\()
         jmp     .LExitProduceOutputBlock\@
 
 .LProduceWithU8U8Avx2\@:
