@@ -1937,7 +1937,7 @@ class TestAdjustWeightScaleForInt32Bias(unittest.TestCase):
         ]
 
         for float_type, per_channel, bias_shape in test_configs:
-            with self.subTest(float_type=float_type, per_channel=per_channel):
+            with self.subTest(float_type=float_type, per_channel=per_channel, bias_shape=bias_shape):
                 bias_shape_str = "x".join(map(str, bias_shape))
                 label = f"_f{float_type}_perchannel{per_channel}_bias{bias_shape_str}"
                 float_model_path = os.path.join(self._tmp_dir_path, f"gemm{label}.float.onnx")
