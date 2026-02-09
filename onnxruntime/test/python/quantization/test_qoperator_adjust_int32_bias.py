@@ -156,6 +156,7 @@ class TestAdjustWeightScaleForInt32BiasQOperator(unittest.TestCase):
             (onnx.TensorProto.FLOAT16, False, [3]),
             (onnx.TensorProto.FLOAT, True, [1, 3]),
             (onnx.TensorProto.FLOAT, False, [1, 3]),
+            # A bias shape of [3, 3] is also valid per Gemm definition, but not supported by the Gemm implementation
         ]
 
         for float_type, per_channel, bias_shape in test_configs:
