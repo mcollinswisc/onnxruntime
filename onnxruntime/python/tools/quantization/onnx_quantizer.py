@@ -825,20 +825,6 @@ class ONNXQuantizer(BaseQuantizer):
             node_qtype,
         ) = self.quantize_bias_static_impl(bias_name, input_scale, weight_scale, beta)
 
-        # Determine the correct axis for per-channel quantization
-        bias_axis = None
-        if bias_scale_data.size > 1:
-            bias_initializer = find_by_name(bias_name, self.model.initializer())
-            if bias_initializer and len(bias_initializer.dims) > 1:
-                # For multi-dimensional bias, find which dimension matches the scale size
-                for i, dim_size in enumerate(bias_initializer.dims):
-                    if dim_size == bias_scale_data.size:
-                        bias_axis = i
-                        break
-            else:
-                # For 1D bias or when initializer not found, use axis 0
-                bias_axis = 0
-
         assert bias_name not in self.quantized_value_map
         quantized_value = QuantizedValue(
             bias_name,
@@ -846,7 +832,7 @@ class ONNXQuantizer(BaseQuantizer):
             quantized_bias_scale_name,
             quantized_bias_zp_name,
             QuantizedValueType.Initializer,
-            bias_axis,
+            -1 if bias_scale_data.size > 1 else None,
             node_type=node_type,
             node_qtype=node_qtype,
         )

@@ -1232,7 +1232,7 @@ class QDQQuantizer(BaseQuantizer):
             quantized_bias_scale_name,
             quantized_bias_zp_name,
             QuantizedValueType.Initializer,
-            0 if bias_scale_data.size > 1 else None,
+            -1 if bias_scale_data.size > 1 else None,
             node_type=node_type,
             node_qtype=node_qtype,
         )
