@@ -1873,6 +1873,7 @@ class TestAdjustWeightScaleForInt32Bias(unittest.TestCase):
         self,
         input_shape: list[int],
         weight_shape: list[int],
+        bias_shape: list[int],
         onnx_float_type: onnx.TensorProto.DataType,
     ):
         np_float_type = onnx.helper.tensor_dtype_to_np_dtype(onnx_float_type)
@@ -1890,11 +1891,6 @@ class TestAdjustWeightScaleForInt32Bias(unittest.TestCase):
 
         weight = onnx.numpy_helper.from_array(weight_data, "weight")
 
-        # For Gemm with transB=1: output = A @ B^T + C
-        # If A is [1, 3] and B is [3, 3], then B^T is [3, 3], result is [1, 3]
-        # Bias must be [3] to broadcast to [1, 3]
-        # Therefore: bias_shape = [weight_shape[1]] for Gemm with transB=1
-        bias_shape = [weight_shape[1]]
         bias_data = np.ones(bias_shape, dtype=np_float_type)
         with np.nditer(bias_data, op_flags=["readwrite"]) as it:
             for i, x in enumerate(it):
@@ -1932,13 +1928,15 @@ class TestAdjustWeightScaleForInt32Bias(unittest.TestCase):
         Test adjustment of Gemm weight input's scale to ensure int32 bias's scale is not too small.
         """
         test_configs = [
-            (onnx.TensorProto.FLOAT, True),
-            (onnx.TensorProto.FLOAT, False),
-            (onnx.TensorProto.FLOAT16, True),
-            (onnx.TensorProto.FLOAT16, False),
+            (onnx.TensorProto.FLOAT, True, [3]),
+            (onnx.TensorProto.FLOAT, False, [3]),
+            (onnx.TensorProto.FLOAT16, True, [3]),
+            (onnx.TensorProto.FLOAT16, False, [3]),
+            (onnx.TensorProto.FLOAT, True, [1, 3]),
+            (onnx.TensorProto.FLOAT, False, [1, 3]),
         ]
 
-        for float_type, per_channel in test_configs:
+        for float_type, per_channel, bias_shape in test_configs:
             with self.subTest(float_type=float_type, per_channel=per_channel):
                 label = f"_f{float_type}_perchannel{per_channel}"
                 float_model_path = os.path.join(self._tmp_dir_path, f"gemm{label}.float.onnx")
@@ -1949,7 +1947,8 @@ class TestAdjustWeightScaleForInt32Bias(unittest.TestCase):
                 # bias's int32 range. But, the qdq_quantizer adjusts the weight's scale to ensure this doesn't happen.
                 input_shape = [1, 3]
                 weight_shape = [3, 3]
-                float_model = self.build_gemm_test_model(input_shape, weight_shape, float_type)
+                float_model = self.build_gemm_test_model(input_shape, weight_shape, bias_shape, float_type)
+                onnx.checker.check_model(float_model)
                 onnx.save_model(float_model, float_model_path)
 
                 # Create a data reader
