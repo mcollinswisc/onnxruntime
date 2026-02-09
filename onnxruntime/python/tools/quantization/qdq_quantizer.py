@@ -440,6 +440,7 @@ class QDQQuantizer(BaseQuantizer):
             return False, None
 
         bias_float_data = tensor_proto_to_array(bias_tp)
+        bias_float_data = np.squeeze(bias_float_data)
 
         int32_info = np.iinfo(np.int32)
         multiplicative_epsilon = 1.0001
