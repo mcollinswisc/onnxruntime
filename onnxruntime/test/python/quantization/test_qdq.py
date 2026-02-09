@@ -1818,6 +1818,57 @@ class TestAdjustWeightScaleForInt32Bias(unittest.TestCase):
         onnx.checker.check_model(model, True)
         return model
 
+    def test_adjust_weight_scale_for_int32_bias(self):
+        """
+        Test adjustment of weight input's scale to ensure int32 bias's scale is not too small.
+        """
+        test_configs = [
+            (onnx.TensorProto.FLOAT, True),
+            (onnx.TensorProto.FLOAT, False),
+            (onnx.TensorProto.FLOAT16, True),
+            (onnx.TensorProto.FLOAT16, False),
+        ]
+
+        for float_type, per_channel in test_configs:
+            with self.subTest(float_type=float_type, per_channel=per_channel):
+                label = f"_f{float_type}_perchannel{per_channel}"
+                float_model_path = os.path.join(self._tmp_dir_path, f"conv{label}.float.onnx")
+                qdq_model_path = os.path.join(self._tmp_dir_path, f"conv{label}.qdq.onnx")
+
+                # Create float model with a Conv that has tiny weight values.
+                # This tiny weight scale would normally create a very small bias scale that will saturate
+                # bias's int32 range. But, the qdq_quantizer adjusts the weight's scale to ensure this doesn't happen.
+                input0_shape = [1, 2, 4, 4]
+                weight_shape = [2, 2, 2, 2]
+                float_model = self.build_conv_test_model(input0_shape, weight_shape, float_type)
+                onnx.save_model(float_model, float_model_path)
+
+                # Create a data reader
+                np_float_type = onnx.helper.tensor_dtype_to_np_dtype(float_type)
+                input0_rmin = 0.0
+                input0_scale = 0.05 if float_type == onnx.TensorProto.FLOAT else 0.01
+                input0_rmax = (input0_scale * 255.0) + input0_rmin
+                input_data_list = [
+                    {"input_0": np.full(input0_shape, input0_rmin, dtype=np_float_type)},
+                    {"input_0": np.full(input0_shape, (input0_rmax - input0_rmin) / 2.0, dtype=np_float_type)},
+                    {"input_0": np.full(input0_shape, input0_rmax, dtype=np_float_type)},
+                ]
+                data_reader = TestDataFeeds(input_data_list)
+
+                # quantize model to QDQ
+                quantize_static(
+                    float_model_path,
+                    qdq_model_path,
+                    data_reader,
+                    activation_type=QuantType.QUInt8,
+                    weight_type=QuantType.QInt8,
+                    per_channel=per_channel,
+                )
+
+                # Check correctness
+                data_reader.rewind()
+                check_model_correctness(self, float_model_path, qdq_model_path, data_reader.get_next())
+
     def build_gemm_test_model(
         self,
         input_shape: list[int],
@@ -1875,57 +1926,6 @@ class TestAdjustWeightScaleForInt32Bias(unittest.TestCase):
         model = onnx.shape_inference.infer_shapes(model)
         onnx.checker.check_model(model, True)
         return model
-
-    def test_adjust_weight_scale_for_int32_bias(self):
-        """
-        Test adjustment of weight input's scale to ensure int32 bias's scale is not too small.
-        """
-        test_configs = [
-            (onnx.TensorProto.FLOAT, True),
-            (onnx.TensorProto.FLOAT, False),
-            (onnx.TensorProto.FLOAT16, True),
-            (onnx.TensorProto.FLOAT16, False),
-        ]
-
-        for float_type, per_channel in test_configs:
-            with self.subTest(float_type=float_type, per_channel=per_channel):
-                label = f"_f{float_type}_perchannel{per_channel}"
-                float_model_path = os.path.join(self._tmp_dir_path, f"conv{label}.float.onnx")
-                qdq_model_path = os.path.join(self._tmp_dir_path, f"conv{label}.qdq.onnx")
-
-                # Create float model with a Conv that has tiny weight values.
-                # This tiny weight scale would normally create a very small bias scale that will saturate
-                # bias's int32 range. But, the qdq_quantizer adjusts the weight's scale to ensure this doesn't happen.
-                input0_shape = [1, 2, 4, 4]
-                weight_shape = [2, 2, 2, 2]
-                float_model = self.build_conv_test_model(input0_shape, weight_shape, float_type)
-                onnx.save_model(float_model, float_model_path)
-
-                # Create a data reader
-                np_float_type = onnx.helper.tensor_dtype_to_np_dtype(float_type)
-                input0_rmin = 0.0
-                input0_scale = 0.05 if float_type == onnx.TensorProto.FLOAT else 0.01
-                input0_rmax = (input0_scale * 255.0) + input0_rmin
-                input_data_list = [
-                    {"input_0": np.full(input0_shape, input0_rmin, dtype=np_float_type)},
-                    {"input_0": np.full(input0_shape, (input0_rmax - input0_rmin) / 2.0, dtype=np_float_type)},
-                    {"input_0": np.full(input0_shape, input0_rmax, dtype=np_float_type)},
-                ]
-                data_reader = TestDataFeeds(input_data_list)
-
-                # quantize model to QDQ
-                quantize_static(
-                    float_model_path,
-                    qdq_model_path,
-                    data_reader,
-                    activation_type=QuantType.QUInt8,
-                    weight_type=QuantType.QInt8,
-                    per_channel=per_channel,
-                )
-
-                # Check correctness
-                data_reader.rewind()
-                check_model_correctness(self, float_model_path, qdq_model_path, data_reader.get_next())
 
     def test_adjust_weight_scale_for_int32_bias_gemm(self):
         """
